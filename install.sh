@@ -34,6 +34,7 @@ if [[ -f /usr/local/x-ui/x-ui && -f "$DB_PATH" ]]; then
     USER_DB=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='username';" 2>/dev/null || true)
     PASS_DB=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='password';" 2>/dev/null || true)
     PORT_DB=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='port';" 2>/dev/null || true)
+    [[ -z "$PORT_DB" || ! "$PORT_DB" =~ ^[0-9]+$ ]] && PORT_DB=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='webPort';" 2>/dev/null || true)
     PATH_DB=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='webBasePath';" 2>/dev/null || true)
 
     IP_ADDR=$(curl -s --max-time 5 ifconfig.me || echo "unknown")
@@ -58,7 +59,7 @@ fi
 info "Installing dependencies..."
 apt-get update -qq
 apt-get install -y -qq expect curl sqlite3 openssl fail2ban \
-    gnupg lsb-release > /dev/null 2>&1
+    gnupg lsb-release dnsutils > /dev/null 2>&1
 ok "Dependencies installed"
 
 # ─── 4. Swap (if RAM < 1 GB and no swap exists) ─────────────
@@ -159,6 +160,7 @@ if [[ -f "$DB_PATH" ]]; then
     USER_EXT=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='username';" 2>/dev/null || true)
     PASS_EXT=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='password';" 2>/dev/null || true)
     PORT_EXT=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='port';" 2>/dev/null || true)
+    [[ -z "$PORT_EXT" || ! "$PORT_EXT" =~ ^[0-9]+$ ]] && PORT_EXT=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='webPort';" 2>/dev/null || true)
     PATH_EXT=$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key='webBasePath';" 2>/dev/null || true)
 fi
 
@@ -222,8 +224,8 @@ if [[ -n "$DOMAIN" ]]; then
         CERT_PATH="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
         KEY_PATH="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
 
-        sqlite3 "$DB_PATH" "UPDATE settings SET value='$CERT_PATH' WHERE key='webCertFile';"
-        sqlite3 "$DB_PATH" "UPDATE settings SET value='$KEY_PATH' WHERE key='webKeyFile';"
+        sqlite3 "$DB_PATH" "DELETE FROM settings WHERE key IN ('webCertFile','webKeyFile');"
+        sqlite3 "$DB_PATH" "INSERT INTO settings (key, value) VALUES ('webCertFile','$CERT_PATH'), ('webKeyFile','$KEY_PATH');"
 
         # Auto-renewal cron + restart 3x-ui after renewal
         cat > /etc/letsencrypt/renewal-hooks/deploy/restart-x-ui.sh << 'HOOK'
@@ -252,8 +254,8 @@ if [[ -z "$DOMAIN" ]]; then
         -out "$CERT_DIR/cert.pem" \
         -subj "/CN=${IP_ADDR}" > /dev/null 2>&1
 
-    sqlite3 "$DB_PATH" "UPDATE settings SET value='$CERT_DIR/cert.pem' WHERE key='webCertFile';"
-    sqlite3 "$DB_PATH" "UPDATE settings SET value='$CERT_DIR/private.key' WHERE key='webKeyFile';"
+    sqlite3 "$DB_PATH" "DELETE FROM settings WHERE key IN ('webCertFile','webKeyFile');"
+    sqlite3 "$DB_PATH" "INSERT INTO settings (key, value) VALUES ('webCertFile','$CERT_DIR/cert.pem'), ('webKeyFile','$CERT_DIR/private.key');"
 
     ok "Self-signed certificate generated (valid 10 years)"
     SSL_INFO="Self-signed — $CERT_DIR/cert.pem (10 years)"
